@@ -19,6 +19,7 @@
 package net.dmulloy2.ultimatearena.arenas.pvp;
 
 import net.dmulloy2.ultimatearena.arenas.Arena;
+import net.dmulloy2.ultimatearena.types.ArenaPlayer;
 import net.dmulloy2.ultimatearena.types.ArenaZone;
 import net.dmulloy2.ultimatearena.types.Team;
 
@@ -36,31 +37,9 @@ public class PvPArena extends Arena
 	@Override
 	public void announceWinner()
 	{
-		tellAllPlayers(getMessage("teamWon"), getWinningTeam(), name);
-	}
-
-	@Override
-	public void check()
-	{
-		if (isInGame())
-		{
-			if (startingAmount < 2)
-			{
-				tellPlayers(getMessage("notEnoughPeople"), 2);
-
-				stop();
-				return;
-			}
-
-			if (! simpleTeamCheck())
-			{
-				setWinningTeam(null);
-
-				stop();
-
-				rewardTeam(null);
-			}
-		}
+		Team winner = getWinningTeam();
+		if (winner != null)
+			tellAllPlayers(getMessage("teamWon"), winner, name);
 	}
 
 	@Override
@@ -70,17 +49,32 @@ public class PvPArena extends Arena
 	}
 
 	@Override
-	public Team getWinningTeam()
+	public void onPlayerEnd(ArenaPlayer ap)
 	{
-		if (winningTeam == null)
+		if (isInGame())
 		{
-			if (redTeamSize > 0)
-				return Team.RED;
-
-			if (blueTeamSize > 0)
-				return Team.BLUE;
+			// Make sure both teams still have players on them
+			if (redTeamSize == 0)
+			{
+				// Blue team wins
+				setWinningTeam(Team.BLUE);
+				stop();
+				rewardTeam(Team.BLUE);
+			}
+			else if (blueTeamSize == 0)
+			{
+				// Red team wins
+				setWinningTeam(Team.RED);
+				stop();
+				rewardTeam(Team.RED);
+			}
 		}
+	}
 
-		return winningTeam;
+	@Override
+	public void onReload()
+	{
+		// There must be at least 2 players or the game won't work properly
+		this.minPlayers = Math.max(2, minPlayers);
 	}
 }

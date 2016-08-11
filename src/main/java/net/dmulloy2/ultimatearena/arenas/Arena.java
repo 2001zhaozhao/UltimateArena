@@ -38,8 +38,11 @@ import net.dmulloy2.types.Reloadable;
 import net.dmulloy2.ultimatearena.Config;
 import net.dmulloy2.ultimatearena.UltimateArena;
 import net.dmulloy2.ultimatearena.api.ArenaType;
+import net.dmulloy2.ultimatearena.api.event.ArenaConcludeEvent;
 import net.dmulloy2.ultimatearena.api.event.ArenaJoinEvent;
 import net.dmulloy2.ultimatearena.api.event.ArenaLeaveEvent;
+import net.dmulloy2.ultimatearena.api.event.ArenaSpawnEvent;
+import net.dmulloy2.ultimatearena.api.event.ArenaStartEvent;
 import net.dmulloy2.ultimatearena.arenas.pvp.PvPArena;
 import net.dmulloy2.ultimatearena.gui.ClassSelectionGUI;
 import net.dmulloy2.ultimatearena.types.ArenaClass;
@@ -53,6 +56,7 @@ import net.dmulloy2.ultimatearena.types.KillStreak;
 import net.dmulloy2.ultimatearena.types.LeaveReason;
 import net.dmulloy2.ultimatearena.types.Permission;
 import net.dmulloy2.ultimatearena.types.Team;
+import net.dmulloy2.ultimatearena.types.WinCondition;
 import net.dmulloy2.util.FormatUtil;
 import net.dmulloy2.util.Util;
 
@@ -66,7 +70,6 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
-import org.bukkit.metadata.FixedMetadataValue;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.scheduler.BukkitRunnable;
 
@@ -109,6 +112,7 @@ public abstract class Arena implements Reloadable
 	private Map<Team, List<String>> mandatedClasses;
 	private Map<Integer, List<KillStreak>> killStreaks;
 
+	protected WinCondition winCondition;
 	protected Team winningTeam;
 
 	protected int broadcastTimer = 45;
@@ -183,20 +187,23 @@ public abstract class Arena implements Reloadable
 	@Override
 	public final void reload()
 	{
+		this.allowTeamKilling = az.getConfig().isAllowTeamKilling();
+		this.countMobKills = az.getConfig().isCountMobKills();
+		this.rewardBasedOnXp = az.getConfig().isRewardBasedOnXp();
+		this.giveRewards = az.getConfig().isGiveRewards();
+		this.forceBalance = az.getConfig().isForceBalance();
+		this.joinInProgress = az.getConfig().isJoinInProgress();
+
 		this.maxGameTime = az.getConfig().getGameTime();
 		this.gameTimer = az.getConfig().getGameTime();
 		this.maxDeaths = az.getConfig().getMaxDeaths();
 		this.maxPlayers = az.getConfig().getMaxPlayers();
 		this.minPlayers = az.getConfig().getMinPlayers();
-		this.allowTeamKilling = az.getConfig().isAllowTeamKilling();
-		this.countMobKills = az.getConfig().isCountMobKills();
-		this.rewardBasedOnXp = az.getConfig().isRewardBasedOnXp();
-		this.killStreaks = az.getConfig().getKillStreaks();
-		this.giveRewards = az.getConfig().isGiveRewards();
-		this.forceBalance = az.getConfig().isForceBalance();
-		this.joinInProgress = az.getConfig().isJoinInProgress();
 
 		this.defaultClass = az.getConfig().getDefaultClass();
+
+		this.killStreaks = az.getConfig().getKillStreaks();
+		this.winCondition = az.getConfig().getWinCondition();
 		this.blacklistedClasses = az.getConfig().getBlacklistedClasses();
 		this.whitelistedClasses = az.getConfig().getWhitelistedClasses();
 		this.mandatedClasses = az.getConfig().getMandatedClasses();
@@ -219,34 +226,35 @@ public abstract class Arena implements Reloadable
 	{
 		player.sendMessage(plugin.getPrefix() + FormatUtil.format(getMessage("joiningArena"), name));
 
-		ArenaPlayer pl = new ArenaPlayer(player, this, plugin);
+		ArenaPlayer ap = new ArenaPlayer(player, this, plugin);
 
-		ArenaJoinEvent event = new ArenaJoinEvent(player, pl, this);
+		// API - cancellable join event
+		ArenaJoinEvent event = new ArenaJoinEvent(this, ap);
 		plugin.getServer().getPluginManager().callEvent(event);
 		if (event.isCancelled())
 		{
-			pl.sendMessage(event.getCancelMessage() != null ? event.getCancelMessage() : "&3Unexpected exit!");
-			pl.clear();
+			ap.sendMessage(event.getCancelMessage() != null ? event.getCancelMessage() : "&3Unexpected exit!");
+			ap.clear();
 			return;
 		}
 
-		// Set their team
+		// API - onJoin
+		onJoin(ap);
+
+		// Determine their team
 		Team team = teamId == null ? getTeam() : Team.get(teamId);
-		pl.setTeam(team);
+		ap.setTeam(team);
 
 		// Teleport the player to the lobby spawn
-		spawnLobby(pl);
+		spawnLobby(ap);
 
 		// Save vital data
-		pl.savePlayerData();
+		ap.savePlayerData();
 
-		// Add metadata
-		player.setMetadata("UA", new FixedMetadataValue(plugin, true));
+		player.setMetadata("UA", plugin.getUAIdentifier());
 
-		// Clear Inventory
-		pl.clearInventory();
+		ap.clearInventory();
 
-		// Make sure the player is in survival
 		player.setGameMode(GameMode.SURVIVAL);
 
 		// Heal up the Player
@@ -259,21 +267,20 @@ public abstract class Arena implements Reloadable
 		player.setFlySpeed(0.1F);
 		player.setFlying(false);
 
-		// Disable god mode
+		// Disable Essentials god mode
 		if (plugin.isEssentialsEnabled())
 			plugin.getEssentialsHandler().disableGodMode(player);
 
-		// Clear potion effects
-		pl.clearPotionEffects();
+		ap.clearPotionEffects();
 
-		// Decide Hat
-		pl.decideHat(false);
+		decideHat(ap);
 
-		// API
-		onJoin(pl);
+		active.add(ap);
+		updateTeams();
 
-		// Add the player
-		active.add(pl);
+		// Alert the other players
+		tellPlayers(getMessage("joinedArena"), ap.getName(), active.size(), maxPlayers);
+		this.lastJoin = ap.getName();
 
 		// Open Class Selector
 		if (Config.classSelectorAutomatic)
@@ -282,8 +289,17 @@ public abstract class Arena implements Reloadable
 			plugin.getGuiHandler().open(player, csGUI);
 		}
 
-		tellPlayers(getMessage("joinedArena"), pl.getName(), active.size(), maxPlayers);
-		this.lastJoin = pl.getName();
+		if (started)
+			spawn(ap);
+	}
+
+	/**
+	 * Decide a player's hat
+	 * @param ap Player to give hat to
+	 */
+	public void decideHat(ArenaPlayer ap)
+	{
+		ap.decideHat(false);
 	}
 
 	/**
@@ -374,7 +390,6 @@ public abstract class Arena implements Reloadable
 	 */
 	public final Team getBalancedTeam()
 	{
-		updateTeams();
 		return redTeamSize > blueTeamSize ? Team.BLUE : Team.RED;
 	}
 
@@ -385,8 +400,7 @@ public abstract class Arena implements Reloadable
 	 */
 	public boolean simpleTeamCheck()
 	{
-		updateTeams();
-		return redTeamSize == 0 || blueTeamSize == 0 ? startingAmount < 1 : true;
+		return (redTeamSize == 0 || blueTeamSize == 0) ? startingAmount < 1 : true;
 	}
 
 	/**
@@ -491,6 +505,9 @@ public abstract class Arena implements Reloadable
 				if (loc != null)
 				{
 					plugin.debug("Spawning player {0}", ap.getName());
+
+					ArenaSpawnEvent event = new ArenaSpawnEvent(this, ap, loc);
+					loc = event.getLocation();
 
 					ap.teleport(loc);
 					ap.spawn();
@@ -785,7 +802,7 @@ public abstract class Arena implements Reloadable
 
 		for (ArenaPlayer ap : getActivePlayers())
 		{
-			endPlayer(ap, false);
+			endPlayer(ap, LeaveReason.END_GAME);
 		}
 
 		for (ArenaSpectator as : spectators)
@@ -824,6 +841,10 @@ public abstract class Arena implements Reloadable
 
 	private final void conclude()
 	{
+		// API - conclude event
+		ArenaConcludeEvent event = new ArenaConcludeEvent(this);
+		plugin.getServer().getPluginManager().callEvent(event);
+
 		if (! disabled)
 			this.gameMode = Mode.IDLE;
 
@@ -835,32 +856,20 @@ public abstract class Arena implements Reloadable
 	}
 
 	/**
-	 * Alias for {@link #endPlayer(ArenaPlayer, boolean)}.
-	 * <p>
-	 * Same as calling {@code endPlayer(ap, false)}.
-	 */
-	public final void endPlayer(ArenaPlayer ap)
-	{
-		endPlayer(ap, false);
-	}
-
-	/**
 	 * Ends an {@link ArenaPlayer}.
 	 *
 	 * @param ap Player to end
-	 * @param disconnected Whether or not they disconnected
+	 * @param reason Reason they're being ended
 	 */
-	public final void endPlayer(ArenaPlayer ap, boolean disconnected)
+	public final void endPlayer(ArenaPlayer ap, LeaveReason reason)
 	{
-		plugin.debug("Ending player {0}, disconnected: {1}", ap.getName(), disconnected);
+		plugin.debug("Ending player {0}, reason: {1}", ap.getName(), reason);
 
 		// Dispose of the scoreboard
 		ap.getBoard().dispose();
 
-		// API stuff
-		onPlayerQuit(ap);
-
-		ArenaLeaveEvent event = new ArenaLeaveEvent(ap.getPlayer(), ap, this);
+		// API - leave event
+		ArenaLeaveEvent event = new ArenaLeaveEvent(this, ap);
 		plugin.getServer().getPluginManager().callEvent(event);
 
 		// Reset them
@@ -871,26 +880,54 @@ public abstract class Arena implements Reloadable
 
 		// Remove from lists
 		active.remove(ap);
-		if (! disconnected)
+		if (reason != LeaveReason.QUIT)
 			inactive.add(ap);
+		updateTeams();
 
 		// Add them to the final leaderboard if applicable
 		if (finalLeaderboard != null)
 		{
-			finalLeaderboard.set(leaderboardIndex, ap.getName());
-			leaderboardIndex--;
+			try
+			{
+				finalLeaderboard.set(leaderboardIndex, ap.getName());
+				leaderboardIndex--;
+			} catch (IndexOutOfBoundsException ex) { }
 		}
 
-		if (active.size() > 1)
+		// Let everyone know why
+		switch (reason)
+		{
+			case COMMAND:
+			case QUIT:
+				tellPlayers(getMessage("leaveBroadcast"), ap.getName());
+				break;
+			case DEATHS:
+				tellPlayers(getMessage("elimination"), ap.getName());
+				break;
+			case ERROR:
+				tellPlayers(getMessage("errorBroadcast"), ap.getName());
+				break;
+			case KICK:
+				tellPlayers(getMessage("kickBroadcast"), ap.getName());
+				break;
+			case END_GAME:
+			case POWER:
+				break;
+		}
+
+		if (reason != LeaveReason.END_GAME && active.size() > 1)
 			tellPlayers(getMessage("playersRemaining"), active.size());
+
+		// API - onPlayerEnd
+		onPlayerEnd(ap);
 	}
 
 	/**
-	 * Called when an {@link ArenaPlayer} quits.
-	 *
-	 * @param ap ArenaPlayer who quit
+	 * Called after an {@link ArenaPlayer} is ended.
+	 * 
+	 * @param ap Ended ArenaPlayer
 	 */
-	public void onPlayerQuit(ArenaPlayer ap) { }
+	public void onPlayerEnd(ArenaPlayer ap) { }
 
 	/**
 	 * Basic timer checker.
@@ -925,6 +962,8 @@ public abstract class Arena implements Reloadable
 		// End the game
 		if (gameTimer <= 0)
 		{
+			tellPlayers(getMessage("outOfTime"));
+
 			onPreOutOfTime();
 			stop();
 			onOutOfTime();
@@ -950,6 +989,7 @@ public abstract class Arena implements Reloadable
 	{
 		if (! started)
 		{
+			// Make sure there are enough players
 			if (active.size() < minPlayers)
 			{
 				tellPlayers(getMessage("notEnoughPeople"), minPlayers);
@@ -957,9 +997,16 @@ public abstract class Arena implements Reloadable
 				return;
 			}
 
+			// API - start event
+			ArenaStartEvent event = new ArenaStartEvent(this);
+			plugin.getServer().getPluginManager().callEvent(event);
+
+			// API - onStart
+			onStart();
+
+			// Balance teams if applicable
 			if (forceBalance && lastJoin != null)
 			{
-				updateTeams();
 				if (redTeamSize != blueTeamSize)
 				{
 					Player extra = Util.matchPlayer(lastJoin);
@@ -985,16 +1032,15 @@ public abstract class Arena implements Reloadable
 
 			this.startingAmount = active.size();
 
+			// Setup the leaderboard for leaderboard signs
 			this.finalLeaderboard = new ArrayList<>(startingAmount);
-			for (int i = 0; i < startingAmount; i++)
-				finalLeaderboard.add("");
+			Collections.fill(finalLeaderboard, "");
 
 			this.leaderboardIndex = startingAmount - 1;
 
 			this.gameTimer = maxGameTime;
 			this.startTimer = -1;
 
-			onStart();
 			spawnAll();
 		}
 	}
@@ -1013,37 +1059,27 @@ public abstract class Arena implements Reloadable
 			return;
 
 		checkTimers();
-		updateTeams();
 		check();
 
 		for (ArenaPlayer ap : getActivePlayers())
 		{
-			// Null check
-			if (ap == null)
-			{
-				active.remove(ap);
-				inactive.remove(ap);
-				continue;
-			}
-
 			// Make sure they're still online
 			if (! ap.isOnline())
 			{
-				// Attempt to end them
 				ap.leaveArena(LeaveReason.QUIT);
 				continue;
 			}
 
-			// End if they've reached the death limit and they're alive
+			// Kick them if they've reached the death limit and they're alive
 			if (ap.getDeaths() >= maxDeaths && ap.getPlayer().getHealth() > 0.0D)
 			{
 				ap.leaveArena(LeaveReason.DEATHS);
 				continue;
 			}
 
-			// Hats
+			// Lobby hats
 			if (isInLobby())
-				ap.decideHat(false);
+				decideHat(ap);
 
 			// Class stuff
 			ArenaClass ac = ap.getArenaClass();
@@ -1109,7 +1145,8 @@ public abstract class Arena implements Reloadable
 			ap.updateScoreboard();
 		}
 
-		if (active.size() <= 0)
+		// Stop if its empty
+		if (active.size() == 0)
 			stop();
 
 		// Update signs
@@ -1120,6 +1157,12 @@ public abstract class Arena implements Reloadable
 	 * Called when the arena is updated. Generally every second or so.
 	 */
 	public void check() { }
+
+	/**
+	 * Called when a player in this Arena moves.
+	 * @param ap Moving player
+	 */
+	public void onMove(ArenaPlayer ap) { }
 
 	/**
 	 * Decides the timer xp bar for an {@link ArenaPlayer}.
@@ -1351,7 +1394,12 @@ public abstract class Arena implements Reloadable
 		return inactive.toArray(new ArenaPlayer[inactive.size()]);
 	}
 
-	private final void updateTeams()
+	/**
+	 * Updates the size of the red and blue teams.
+	 * @see #getRedTeamSize()
+	 * @see #getBlueTeamSize()
+	 */
+	protected final void updateTeams()
 	{
 		this.redTeamSize = 0;
 		this.blueTeamSize = 0;
@@ -1360,7 +1408,7 @@ public abstract class Arena implements Reloadable
 		{
 			if (ap.getTeam() == Team.RED)
 				redTeamSize++;
-			else
+			else if (ap.getTeam() == Team.BLUE)
 				blueTeamSize++;
 		}
 	}

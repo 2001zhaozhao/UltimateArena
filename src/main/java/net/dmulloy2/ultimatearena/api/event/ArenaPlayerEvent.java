@@ -16,36 +16,48 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-package net.dmulloy2.ultimatearena.arenas.hunger;
+package net.dmulloy2.ultimatearena.api.event;
 
-import net.dmulloy2.ultimatearena.arenas.ffa.FFAArena;
+import net.dmulloy2.ultimatearena.arenas.Arena;
 import net.dmulloy2.ultimatearena.types.ArenaPlayer;
-import net.dmulloy2.ultimatearena.types.ArenaZone;
+
+import org.apache.commons.lang.Validate;
+import org.bukkit.entity.Player;
 
 /**
+ * ArenaEvents involving players
  * @author dmulloy2
  */
 
-public class HungerArena extends FFAArena
+public abstract class ArenaPlayerEvent extends ArenaEvent
 {
-	public HungerArena(ArenaZone az)
+	protected final ArenaPlayer player;
+
+	public ArenaPlayerEvent(Arena arena, ArenaPlayer player)
 	{
-		super(az);
+		super(arena);
+
+		Validate.notNull(player, "player cannot be null!");
+		this.player = player;
 	}
 
-	@Override
-	public void announceWinner()
+	/**
+	 * Gets the Bukkit Player involved in this event.
+	 * 
+	 * @return The player, will not be null
+	 */
+	public final Player getPlayer()
 	{
-		if (winner != null)
-			tellAllPlayers(getMessage("tributeWon"), winner.getName());
+		return player.getPlayer();
 	}
 
-	@Override
-	public void onPlayerDeath(ArenaPlayer pl)
+	/**
+	 * Gets the ArenaPlayer involved in this event.
+	 * 
+	 * @return The arena player, will not be null
+	 */
+	public final ArenaPlayer getArenaPlayer()
 	{
-		super.onPlayerDeath(pl);
-
-		pl.getPlayer().getWorld().strikeLightningEffect(pl.getPlayer().getLocation());
-		tellPlayers(getMessage("tributeFallen"), pl.getName());
+		return player;
 	}
 }

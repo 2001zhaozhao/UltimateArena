@@ -16,36 +16,19 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-package net.dmulloy2.ultimatearena.arenas.hunger;
+package net.dmulloy2.ultimatearena.api.event;
 
-import net.dmulloy2.ultimatearena.arenas.ffa.FFAArena;
-import net.dmulloy2.ultimatearena.types.ArenaPlayer;
-import net.dmulloy2.ultimatearena.types.ArenaZone;
+import net.dmulloy2.ultimatearena.arenas.Arena;
 
 /**
+ * Called when an Arena concludes.
  * @author dmulloy2
  */
 
-public class HungerArena extends FFAArena
+public final class ArenaConcludeEvent extends ArenaEvent
 {
-	public HungerArena(ArenaZone az)
+	public ArenaConcludeEvent(Arena arena)
 	{
-		super(az);
-	}
-
-	@Override
-	public void announceWinner()
-	{
-		if (winner != null)
-			tellAllPlayers(getMessage("tributeWon"), winner.getName());
-	}
-
-	@Override
-	public void onPlayerDeath(ArenaPlayer pl)
-	{
-		super.onPlayerDeath(pl);
-
-		pl.getPlayer().getWorld().strikeLightningEffect(pl.getPlayer().getLocation());
-		tellPlayers(getMessage("tributeFallen"), pl.getName());
+		super(arena);
 	}
 }

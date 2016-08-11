@@ -18,7 +18,13 @@
  */
 package net.dmulloy2.ultimatearena.arenas.ffa;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
 
 import net.dmulloy2.ultimatearena.arenas.Arena;
 import net.dmulloy2.ultimatearena.types.ArenaPlayer;
@@ -41,54 +47,6 @@ public class FFAArena extends Arena
 	}
 
 	@Override
-	public Location getSpawn(ArenaPlayer ap)
-	{
-		if (isInLobby())
-		{
-			return super.getSpawn(ap);
-		}
-
-		return getRandomSpawn(ap);
-	}
-
-	@Override
-	public void onSpawn(ArenaPlayer ap)
-	{
-		ap.decideHat(true);
-	}
-
-	@Override
-	public void check()
-	{
-		if (isInGame())
-		{
-			if (isEmpty())
-			{
-				setWinningTeam(null);
-
-				if (startingAmount > 1)
-				{
-					if (active.size() > 0)
-					{
-						this.winner = active.get(0);
-					}
-				}
-
-				stop();
-
-				if (startingAmount > 1)
-				{
-					rewardTeam(winningTeam);
-				}
-				else
-				{
-					tellPlayers(getMessage("notEnoughPeople"), 2);
-				}
-			}
-		}
-	}
-
-	@Override
 	public void announceWinner()
 	{
 		if (winner != null)
@@ -102,16 +60,111 @@ public class FFAArena extends Arena
 	}
 
 	@Override
-	public void onStop()
+	public void decideHat(ArenaPlayer ap)
 	{
-		if (active.size() > 1)
-		{
-			// Reward the leader if we run out of time
-			List<ArenaPlayer> lb = getLeaderboard();
-			if (! lb.isEmpty())
-				this.winner = lb.get(0);
+		ap.decideHat(true);
+	}
 
-			reward(winner);
+	@Override
+	public Location getSpawn(ArenaPlayer ap)
+	{
+		if (isInLobby())
+		{
+			return super.getSpawn(ap);
+		}
+
+		return getRandomSpawn(ap);
+	}
+
+	@Override
+	public void onPlayerEnd(ArenaPlayer ap)
+	{
+		if (isInGame())
+		{
+			// Last player standing wins
+			if (active.size() == 1)
+			{
+				this.winner = active.get(0);
+
+				setWinningTeam(null);
+				stop();
+				rewardTeam(null);
+			}
+		}
+	}
+
+	@Override
+	public void onReload()
+	{
+		// Two players required
+		this.minPlayers = Math.max(2, minPlayers);
+	}
+
+	private ArenaPlayer mostKills()
+	{
+		List<ArenaPlayer> players = getActive();
+		if (players.isEmpty()) return null;
+		if (players.size() == 1) return players.get(0);
+
+		Map<ArenaPlayer, Integer> map = new HashMap<>();
+		for (ArenaPlayer ap : players)
+			map.put(ap, ap.getKills());
+
+		List<Entry<ArenaPlayer, Integer>> sortedEntries = new ArrayList<>(map.entrySet());
+		Collections.sort(sortedEntries, new Comparator<Entry<ArenaPlayer, Integer>>()
+		{
+			@Override
+			public int compare(Entry<ArenaPlayer, Integer> entry1, Entry<ArenaPlayer, Integer> entry2)
+			{
+				return -entry1.getValue().compareTo(entry2.getValue());
+			}
+		});
+
+		return sortedEntries.get(0).getKey();
+	}
+
+	@Override
+	public void onPreOutOfTime()
+	{
+		switch (winCondition)
+		{
+			case LAST_MAN_STANDING:
+				break;
+			case MOST_KILLS:
+			{
+				ArenaPlayer ap = mostKills();
+				if (ap != null)
+				{
+					ap.setCanReward(true);
+					this.winner = ap;
+				}
+				break;
+			}
+			case BEST_KDR:
+			{
+				List<ArenaPlayer> leaderboard = getLeaderboard();
+				if (! leaderboard.isEmpty())
+				{
+					ArenaPlayer ap = leaderboard.get(0);
+					ap.setCanReward(true);
+					this.winner = ap;
+				}
+				break;
+			}
+		}
+	}
+
+	@Override
+	public void onOutOfTime()
+	{
+		switch (winCondition)
+		{
+			case LAST_MAN_STANDING:
+				break;
+			case MOST_KILLS:
+			case BEST_KDR:
+				rewardTeam(null);
+				break;
 		}
 	}
 }

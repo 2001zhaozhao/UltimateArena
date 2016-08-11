@@ -55,7 +55,7 @@ public class ArenaConfig extends Configuration
 {
 	// ---- Generic
 	protected boolean allowTeamKilling, countMobKills, canModifyWorld, unlimitedAmmo, rewardBasedOnXp, giveRewards, forceBalance,
-		joinInProgress;
+		joinInProgress, preserveMobs;
 	protected int gameTime, lobbyTime, maxDeaths, maxPlayers, minPlayers;
 	protected String defaultClass;
 	protected double cashReward;
@@ -64,6 +64,7 @@ public class ArenaConfig extends Configuration
 	protected List<Material> clearMaterials;
 
 	protected transient List<ItemStack> rewards;
+	protected transient WinCondition winCondition;
 	protected transient List<ScaledReward> scaledRewards;
 	protected transient Map<Team, List<String>> mandatedClasses;
 	protected transient Map<Integer, List<KillStreak>> killStreaks;
@@ -110,6 +111,7 @@ public class ArenaConfig extends Configuration
 		this.blacklistedClasses = new ArrayList<>();
 		this.whitelistedClasses = new ArrayList<>();
 		this.killStreaks = getDefaultKillStreak();
+		this.winCondition = WinCondition.LAST_MAN_STANDING;
 
 		this.maxDeaths = 1;
 		this.maxPlayers = 24;
@@ -158,19 +160,31 @@ public class ArenaConfig extends Configuration
 			config.load(file);
 
 			Map<String, Object> values = config.getValues(false);
-			this.gameTime = getInt(values, "gameTime", def.getGameTime());
-			this.lobbyTime = getInt(values, "lobbyTime", def.getLobbyTime());
-			this.maxPlayers = getInt(values, "maxPlayers", def.getMaxPlayers());
-			this.minPlayers = getInt(values, "minPlayers", def.getMinPlayers());
-			this.maxDeaths = Math.max(1, getInt(values, "maxDeaths", def.getMaxDeaths()));
 			this.allowTeamKilling = getBoolean(values, "allowTeamKilling", def.isAllowTeamKilling());
-			this.cashReward = getDouble(values, "cashReward", def.getCashReward());
 			this.countMobKills = getBoolean(values, "countMobKills", def.isCountMobKills());
 			this.canModifyWorld = getBoolean(values, "canModifyWorld", def.isCanModifyWorld());
 			this.unlimitedAmmo = getBoolean(values, "unlimitedAmmo", def.isUnlimitedAmmo());
-			this.giveRewards = getBoolean(values, "giveRewards", def.isGiveRewards());
 			this.rewardBasedOnXp = getBoolean(values, "rewardBasedOnXp", def.isRewardBasedOnXp());
+			this.giveRewards = getBoolean(values, "giveRewards", def.isGiveRewards());
+			this.forceBalance = getBoolean(values, "forceBalance", def.isForceBalance());
+			this.joinInProgress = getBoolean(values, "joinInProgress", def.isJoinInProgress());
+
+			if (this.preserveMobs = getBoolean(values, "preserveMobs", def.isPreserveMobs()))
+				Global.mobPreservation = true;
+
+			this.gameTime = getInt(values, "gameTime", def.getGameTime());
+			this.lobbyTime = getInt(values, "lobbyTime", def.getLobbyTime());
+			this.maxDeaths = Math.max(1, getInt(values, "maxDeaths", def.getMaxDeaths()));
+			this.maxPlayers = getInt(values, "maxPlayers", def.getMaxPlayers());
+			this.minPlayers = Math.max(1, getInt(values, "minPlayers", def.getMinPlayers()));
+
 			this.defaultClass = getString(values, "defaultClass", def.getDefaultClass());
+
+			this.cashReward = getDouble(values, "cashReward", def.getCashReward());
+
+			WinCondition condition = WinCondition.fromConfig(getString(values, "winCondition", "default"));
+			if (condition != null)
+				this.winCondition = condition;
 
 			if (giveRewards)
 			{
@@ -457,5 +471,18 @@ public class ArenaConfig extends Configuration
 		// Reload
 		this.loaded = false;
 		this.loaded = load();
+	}
+
+	/**
+	 * Global registry of enabled config values. If a config value is never
+	 * enabled, it isn't checked elsewhere and there's no performance hit.
+	 * <p>
+	 * <i>To be expanded</i>
+	 * 
+	 * @author dmulloy2
+	 */
+	public static class Global
+	{
+		public static boolean mobPreservation = false;
 	}
 }

@@ -48,7 +48,6 @@ import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.LeatherArmorMeta;
-import org.bukkit.metadata.FixedMetadataValue;
 import org.bukkit.potion.PotionEffect;
 
 /**
@@ -69,7 +68,6 @@ public final class ArenaPlayer
 	private int deaths;
 	private int killStreak;
 	private int gameXP;
-	private int amtKicked;
 
 	private boolean out;
 	private boolean canReward;
@@ -115,6 +113,7 @@ public final class ArenaPlayer
 			this.board = new StandardScoreboard(plugin, this);
 		else
 			this.board = DisabledScoreboard.getInstance();
+
 		// TODO ViewIt integration
 	}
 
@@ -217,12 +216,6 @@ public final class ArenaPlayer
 	 */
 	public final void spawn()
 	{
-		if (amtKicked > 10)
-		{
-			leaveArena(LeaveReason.KICK);
-			return;
-		}
-
 		clearInventory();
 		clearPotionEffects();
 
@@ -230,7 +223,7 @@ public final class ArenaPlayer
 
 		Player player = getPlayer();
 		if (! player.hasMetadata("UA"))
-			player.setMetadata("UA", new FixedMetadataValue(plugin, true));
+			player.setMetadata("UA", plugin.getUAIdentifier());
 	}
 
 	/**
@@ -288,11 +281,11 @@ public final class ArenaPlayer
 		if (! arena.isInGame())
 		{
 			if (arena.isInLobby())
-				decideHat(false);
+				arena.decideHat(this);
 			return;
 		}
 
-		decideHat(false);
+		arena.decideHat(this);
 
 		if (arenaClass == null)
 		{
@@ -439,7 +432,6 @@ public final class ArenaPlayer
 	{
 		this.deathTime = System.currentTimeMillis();
 		this.killStreak = 0;
-		this.amtKicked = 0;
 		this.deaths++;
 
 		arena.onPlayerDeath(this);
@@ -472,34 +464,27 @@ public final class ArenaPlayer
 				}
 			}
 		}
+		
+		arena.endPlayer(this, reason);
 
+		// Message them, if applicable
 		switch (reason)
 		{
 			case COMMAND:
-				arena.endPlayer(this);
 				sendMessage(plugin.getMessage("youLeft"));
-				arena.tellPlayers(plugin.getMessage("leaveBroadcast"), name);
 				break;
 			case DEATHS:
-				arena.endPlayer(this);
 				sendMessage(plugin.getMessage("youDied"));
-				arena.tellPlayers(plugin.getMessage("elimination"), name);
-				break;
-			case KICK:
-				arena.endPlayer(this);
-				sendMessage(plugin.getMessage("youWereKicked"));
-				arena.tellPlayers(plugin.getMessage("kickBroadcast"), name);
-				break;
-			case QUIT:
-				arena.endPlayer(this, true);
-				arena.tellPlayers(plugin.getMessage("leaveBroadcast"), name);
 				break;
 			case ERROR:
-				arena.endPlayer(this);
-				arena.tellPlayers(plugin.getMessage("errorBroadcast"), name);
+				// Callers should send a specific error message
 				break;
+			case KICK:
+				sendMessage(plugin.getMessage("youWereKicked"));
+				break;
+			case POWER:
+				sendMessage(plugin.getMessage("powerKick"));
 			default:
-				arena.endPlayer(this);
 				break;
 		}
 	}

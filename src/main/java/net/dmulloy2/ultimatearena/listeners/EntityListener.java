@@ -18,19 +18,23 @@
  */
 package net.dmulloy2.ultimatearena.listeners;
 
-import java.lang.reflect.Method;
-
 import lombok.RequiredArgsConstructor;
 import net.dmulloy2.ultimatearena.UltimateArena;
 import net.dmulloy2.ultimatearena.arenas.Arena;
 import net.dmulloy2.ultimatearena.arenas.spleef.SpleefArena;
 import net.dmulloy2.ultimatearena.types.ArenaClass;
+import net.dmulloy2.ultimatearena.types.ArenaConfig;
 import net.dmulloy2.ultimatearena.types.ArenaPlayer;
+import net.dmulloy2.ultimatearena.types.ArenaZone;
+import net.dmulloy2.util.CompatUtil;
 import net.dmulloy2.util.FormatUtil;
+import net.dmulloy2.util.MaterialUtil;
 
 import org.bukkit.Material;
+import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
@@ -38,6 +42,8 @@ import org.bukkit.entity.Wolf;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.EntityCombustByBlockEvent;
+import org.bukkit.event.entity.EntityCombustByEntityEvent;
 import org.bukkit.event.entity.EntityCombustEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
@@ -46,6 +52,7 @@ import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.entity.FoodLevelChangeEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.projectiles.BlockProjectileSource;
+import org.bukkit.projectiles.ProjectileSource;
 
 /**
  * @author dmulloy2
@@ -86,13 +93,15 @@ public class EntityListener implements Listener
 		}
 	}
 
-	// Stop combustion in the lobby
 	@EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
 	public void onEntityCombust(EntityCombustEvent event)
 	{
-		if (event.getEntity() instanceof Player)
+		Entity entity = event.getEntity();
+		EntityType type = entity.getType();
+		if (type == EntityType.PLAYER)
 		{
-			Player player = (Player) event.getEntity();
+			// Stop combustion in the lobby
+			Player player = (Player) entity;
 			ArenaPlayer ap = plugin.getArenaPlayer(player);
 			if (ap != null)
 			{
@@ -101,6 +110,30 @@ public class EntityListener implements Listener
 				{
 					player.setFireTicks(0);
 					event.setCancelled(true);
+				}
+			}
+		}
+		else if (type == EntityType.SKELETON || type == EntityType.ZOMBIE)
+		{
+			if (ArenaConfig.Global.mobPreservation)
+			{
+				// Skip the other cases
+				if (event instanceof EntityCombustByBlockEvent || event instanceof EntityCombustByEntityEvent)
+					return;
+
+				// Stop zombies and skeletons from combusting from the sun if applicable
+				World world = entity.getWorld();
+				if (world.getTime() <= 13500L)
+				{
+					ArenaZone az = plugin.getZoneInside(entity.getLocation());
+					if (az != null)
+					{
+						Arena arena = plugin.getArena(az.getName());
+						if (arena != null && arena.getConfig().isPreserveMobs())
+						{
+							event.setCancelled(true);
+						}
+					}
 				}
 			}
 		}
@@ -183,7 +216,7 @@ public class EntityListener implements Listener
 		if (ap != null)
 		{
 			// Repair in-hand item
-			ItemStack inHand = player.getItemInHand();
+			ItemStack inHand = CompatUtil.getItemInMainHand(player);
 			if (inHand != null && inHand.getType() != Material.AIR)
 			{
 				if (inHand.getType().getMaxDurability() != 0)
@@ -255,8 +288,11 @@ public class EntityListener implements Listener
 	public void onEntityDeathMonitor(EntityDeathEvent event)
 	{
 		LivingEntity entity = event.getEntity();
-		if (plugin.isInArena(entity.getLocation()))
+		ArenaZone inside = plugin.getZoneInside(entity.getLocation());
+		if (inside != null)
 		{
+			plugin.getLogHandler().debug("Clearing drops from {0} in arena {1}", entity, inside);
+
 			event.getDrops().clear();
 			event.setDroppedExp(0);
 		}
@@ -331,7 +367,7 @@ public class EntityListener implements Listener
 						else if (damager instanceof Projectile)
 						{
 							Projectile proj = (Projectile) damager;
-							Object shooter = getShooter(proj);
+							ProjectileSource shooter = proj.getShooter();
 
 							if (shooter instanceof Player)
 							{
@@ -422,14 +458,14 @@ public class EntityListener implements Listener
 
 	private String getWeapon(Player player)
 	{
-		ItemStack inHand = player.getItemInHand();
+		ItemStack inHand = CompatUtil.getItemInMainHand(player);
 		if (inHand == null || inHand.getType() == Material.AIR)
 		{
 			return "their fists";
 		}
 		else
 		{
-			String name = FormatUtil.getFriendlyName(inHand.getType());
+			String name = MaterialUtil.getName(inHand);
 			String article = FormatUtil.getArticle(name);
 			return "&3" + article + " &e" + name;
 		}
@@ -445,25 +481,11 @@ public class EntityListener implements Listener
 		if (entity instanceof Projectile)
 		{
 			Projectile proj = (Projectile) entity;
-			Object shooter = getShooter(proj);
+			ProjectileSource shooter = proj.getShooter();
 			if (shooter instanceof Player)
 				return (Player) shooter;
 		}
 
 		return null;
-	}
-
-	private Method getShooter;
-
-	private Object getShooter(Projectile proj)
-	{
-		try
-		{
-			if (getShooter == null)
-				getShooter = Projectile.class.getMethod("getShooter");
-			if (getShooter.getReturnType() == LivingEntity.class)
-				return getShooter.invoke(proj);
-		} catch (Throwable ex) { }
-		return proj.getShooter();
 	}
 }

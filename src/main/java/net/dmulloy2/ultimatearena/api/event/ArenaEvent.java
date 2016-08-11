@@ -18,15 +18,11 @@
  */
 package net.dmulloy2.ultimatearena.api.event;
 
-import lombok.Getter;
-import lombok.Setter;
 import net.dmulloy2.ultimatearena.arenas.Arena;
-import net.dmulloy2.ultimatearena.types.ArenaPlayer;
 
-import org.bukkit.entity.Player;
-import org.bukkit.event.Cancellable;
+import org.apache.commons.lang.Validate;
+import org.bukkit.event.Event;
 import org.bukkit.event.HandlerList;
-import org.bukkit.event.player.PlayerEvent;
 
 /**
  * Represents an event relating to arenas.
@@ -34,21 +30,26 @@ import org.bukkit.event.player.PlayerEvent;
  * @author dmulloy2
  */
 
-@Getter
-public class ArenaEvent extends PlayerEvent implements Cancellable
+public abstract class ArenaEvent extends Event
 {
 	private static final HandlerList handlers = new HandlerList();
-	private @Setter String cancelMessage;
-	private @Setter boolean cancelled;
 
-	private ArenaPlayer arenaPlayer;
-	private Arena arena;
+	protected final Arena arena;
 
-	public ArenaEvent(Player player, ArenaPlayer arenaPlayer, Arena arena)
+	public ArenaEvent(Arena arena)
 	{
-		super(player);
-		this.arenaPlayer = arenaPlayer;
+		Validate.notNull(arena, "arena cannot be null!");
 		this.arena = arena;
+	}
+
+	/**
+	 * Gets the {@link Arena} involved in this event.
+	 * 
+	 * @return The Arena, will not be null
+	 */
+	public final Arena getArena()
+	{
+		return arena;
 	}
 
 	@Override

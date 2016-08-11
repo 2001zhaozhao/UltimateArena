@@ -16,36 +16,49 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-package net.dmulloy2.ultimatearena.arenas.hunger;
+package net.dmulloy2.ultimatearena.api.event;
 
-import net.dmulloy2.ultimatearena.arenas.ffa.FFAArena;
+import net.dmulloy2.ultimatearena.arenas.Arena;
 import net.dmulloy2.ultimatearena.types.ArenaPlayer;
-import net.dmulloy2.ultimatearena.types.ArenaZone;
+
+import org.apache.commons.lang.Validate;
+import org.bukkit.Location;
 
 /**
+ * Called when a player is spawned in an Arena.
  * @author dmulloy2
  */
 
-public class HungerArena extends FFAArena
+public final class ArenaSpawnEvent extends ArenaPlayerEvent
 {
-	public HungerArena(ArenaZone az)
+	private Location location;
+
+	public ArenaSpawnEvent(Arena arena, ArenaPlayer player, Location location)
 	{
-		super(az);
+		super(arena, player);
+
+		Validate.notNull(location, "location cannot be null!");
+		this.location = location;
 	}
 
-	@Override
-	public void announceWinner()
+	/**
+	 * Gets the current spawn Location.
+	 * 
+	 * @return The Location
+	 */
+	public Location getLocation()
 	{
-		if (winner != null)
-			tellAllPlayers(getMessage("tributeWon"), winner.getName());
+		return location;
 	}
 
-	@Override
-	public void onPlayerDeath(ArenaPlayer pl)
+	/**
+	 * Sets the spawn Location.
+	 * 
+	 * @param location The new location, cannot be null
+	 */
+	public void setLocation(Location location)
 	{
-		super.onPlayerDeath(pl);
-
-		pl.getPlayer().getWorld().strikeLightningEffect(pl.getPlayer().getLocation());
-		tellPlayers(getMessage("tributeFallen"), pl.getName());
+		Validate.notNull(location, "location cannot be null!");
+		this.location = location;
 	}
 }
